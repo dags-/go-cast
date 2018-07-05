@@ -159,12 +159,62 @@ func (c *Client) launchURLApp(ctx context.Context) (string, error) {
 	return c.launchApp(ctx, AppURL)
 }
 
+func (c *Client) GetMediaStatus(ctx context.Context) ([]*controllers.MediaStatus, error) {
+	status, err := c.receiver.GetStatus(ctx)
+	if err != nil {
+		log.Fatalln(err)
+		return nil, err
+	}
+
+	var app *controllers.ApplicationSession
+	for _, a := range status.Applications {
+		app = a
+	}
+
+	if app == nil {
+		return nil, errors.New("no media")
+	}
+
+	conn := controllers.NewConnectionController(c.conn, c.Events, DefaultSender, *app.TransportId)
+	if err := conn.Start(ctx); err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	m := controllers.NewMediaController(c.conn, c.Events, DefaultSender, *app.TransportId)
+	mstat, e := m.GetStatus(ctx)
+	if e != nil {
+		return nil, e
+	}
+
+	return mstat.Status, nil
+}
+
 func (c *Client) IsPlaying(ctx context.Context) bool {
 	status, err := c.receiver.GetStatus(ctx)
 	if err != nil {
 		log.Fatalln(err)
 		return false
 	}
+
+	for _, a := range status.Applications {
+		conn := controllers.NewConnectionController(c.conn, c.Events, DefaultSender, *a.TransportId)
+		if err := conn.Start(ctx); err != nil {
+			fmt.Println(err)
+			break
+		}
+		m := controllers.NewMediaController(c.conn, c.Events, DefaultSender, *a.TransportId)
+		s, e := m.GetStatus(ctx)
+		if e != nil {
+			fmt.Println(e)
+			break
+		}
+		for _, i := range s.Status {
+
+			fmt.Println(i.PlayerState, i.IdleReason)
+		}
+	}
+
 	app := status.GetSessionByAppId(AppMedia)
 	if app == nil {
 		return false
